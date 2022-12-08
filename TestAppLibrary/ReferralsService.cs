@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Configuration;
 using System.Linq;
 using System.Text;
@@ -9,37 +10,25 @@ namespace TestAppLibrary
 {
     public class ReferralsService
     {
-        public bool AddReferral(string firstname, string lastname, DateTime dateOfBirth, string serviceName, string location) {
+        private List<Location> _locations;
 
-            if (string.IsNullOrEmpty(firstname) || string.IsNullOrEmpty(lastname))
+        public ReferralsService()
+        {
+            _locations = new List<Location> { 
+                new Location("County Durham", Region.NorthEast),
+                new Location("Northumbria", Region.NorthEast),
+                new Location("North Yorkshire", Region.NorthEast),
+                new Location("Cumbria", Region.NorthWest),
+                new Location("Lancashire", Region.NorthWest),
+                new Location("Cheshire", Region.NorthWest),
+            };
+        }
+
+        public bool AddReferral(string firstname, string lastname, DateTime dateOfBirth, string serviceName, string location) 
+        {
+            if (!IsValidAge(dateOfBirth, serviceName))
             {
                 return false;
-            }
-
-            var currentDate = DateTime.Now;
-            var age = currentDate.Year - dateOfBirth.Year;
-            if (currentDate.Month < dateOfBirth.Month)
-            {
-                age = age - 1;
-            }
-            else if (currentDate.Month == dateOfBirth.Month && currentDate.Day < dateOfBirth.Day)
-            {
-                age = age - 1;
-            }
-
-            if (serviceName.EndsWith("Young People"))
-            {
-                if (age < 16 || age > 21)
-                {
-                    return false;
-                }
-            }
-            else
-            {
-                if (age < 18)
-                {
-                    return false;
-                }
             }
 
             var referral = new Referral();
@@ -51,29 +40,58 @@ namespace TestAppLibrary
             var serviceDataAccess = new ServiceDataAccess(ConfigurationManager.ConnectionStrings["Database"].ConnectionString);
             var service = serviceDataAccess.GetService(serviceName);
 
-            if (service == null)
-            {
-                return false;
-            }
-
             referral.Service = service;
 
-            if (location == "County Durham" || location == "Northumbria" || location == "North Yorkshire")
+            referral.Region = GetRegion(location);
+
+            var context = new ValidationContext(referral, serviceProvider: null, items: null);
+            var errorResults = new List<ValidationResult>();
+
+            var isValid = Validator.TryValidateObject(referral, context, errorResults);
+            if (!isValid)
             {
-                referral.Region = Region.NorthEast;
-            }
-            else if (location == "Cumbria" || location == "Lancashire" || location == "Cheshire")
-            {
-                referral.Region = Region.NorthWest;
-            }
-            else
-            {
-                referral.Region = Region.Other;
+                return false;
             }
 
             ReferralDataAccess.CreateReferral(referral);
 
             return true;
-        } 
+        }
+
+        private Region GetRegion(string location)
+        {
+            var region = _locations.Find(l => l.Name == location)?.Region;
+
+            return region.GetValueOrDefault(Region.Other);
+        }
+
+        private bool IsValidAge(DateTime dateOfBirth, string serviceName)
+        {
+            var age = CalculateAge(dateOfBirth);
+
+            if (serviceName.EndsWith("Young People") && (age < 16 || age > 21))
+            {
+                return false;
+            }
+            else if (age < 18)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private int CalculateAge(DateTime dateOfBirth)
+        {
+            var currentDate = DateTime.Now;
+            var age = currentDate.Year - dateOfBirth.Year;
+
+            if (dateOfBirth.Date > currentDate.AddYears(-age))
+            {
+                return age - 1;
+            }
+            
+            return age;
+        }
     }
 }
