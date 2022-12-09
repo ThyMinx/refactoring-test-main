@@ -8,23 +8,38 @@ using System.Threading.Tasks;
 
 namespace TestAppLibrary
 {
-    public class ReferralsService
+    internal sealed class ReferralsService
     {
-        private List<Location> _locations;
+        private IEnumerable<Location> _locations;
+        private IReferralsRepository _referralsRepository;
+
+        private const string YoungPeopleServiceName = "Young People";
+        private const int YoungPeopleServiceMinAge = 16;
+        private const int YoungPeopleServiceMaxAge = 21;
+        private const int OtherServiceAge = 18;
+
+        //I have to do it this way as I can't add dependency injection to program.cs, this allows for testing.
+        public ReferralsService(IEnumerable<Location> locations, IReferralsRepository referralsRepository)
+        {
+            _locations = locations;
+            _referralsRepository = referralsRepository;
+        }
 
         public ReferralsService()
         {
-            _locations = new List<Location> { 
-                new Location("County Durham", Region.NorthEast),
-                new Location("Northumbria", Region.NorthEast),
-                new Location("North Yorkshire", Region.NorthEast),
-                new Location("Cumbria", Region.NorthWest),
-                new Location("Lancashire", Region.NorthWest),
-                new Location("Cheshire", Region.NorthWest),
+            _locations = new List<Location> {
+                    new Location("County Durham", Region.NorthEast),
+                    new Location("Northumbria", Region.NorthEast),
+                    new Location("North Yorkshire", Region.NorthEast),
+                    new Location("Cumbria", Region.NorthWest),
+                    new Location("Lancashire", Region.NorthWest),
+                    new Location("Cheshire", Region.NorthWest),
             };
+
+            _referralsRepository = new ReferralsRepository();
         }
 
-        public bool AddReferral(string firstname, string lastname, DateTime dateOfBirth, string serviceName, string location) 
+        public bool AddReferral(string firstname, string lastname, DateTime dateOfBirth, string serviceName, string location)
         {
             if (!IsValidAge(dateOfBirth, serviceName))
             {
@@ -37,30 +52,31 @@ namespace TestAppLibrary
             referral.Lastname = lastname;
             referral.DateOfBirth = dateOfBirth;
 
-            var serviceDataAccess = new ServiceDataAccess(ConfigurationManager.ConnectionStrings["Database"].ConnectionString);
-            var service = serviceDataAccess.GetService(serviceName);
-
-            referral.Service = service;
+            referral.Service = _referralsRepository.GetService(serviceName);
 
             referral.Region = GetRegion(location);
 
-            var context = new ValidationContext(referral, serviceProvider: null, items: null);
-            var errorResults = new List<ValidationResult>();
-
-            var isValid = Validator.TryValidateObject(referral, context, errorResults);
-            if (!isValid)
+            if (!IsValidReferral(referral))
             {
                 return false;
             }
 
-            ReferralDataAccess.CreateReferral(referral);
+            _referralsRepository.CreateReferral(referral);
 
             return true;
         }
 
+        private bool IsValidReferral(Referral referral)
+        {
+            var context = new ValidationContext(referral, serviceProvider: null, items: null);
+            var errorResults = new List<ValidationResult>();
+
+            return Validator.TryValidateObject(referral, context, errorResults);
+        }
+
         private Region GetRegion(string location)
         {
-            var region = _locations.Find(l => l.Name == location)?.Region;
+            var region = _locations.FirstOrDefault(l => l.Name == location)?.Region;
 
             return region.GetValueOrDefault(Region.Other);
         }
@@ -69,11 +85,11 @@ namespace TestAppLibrary
         {
             var age = CalculateAge(dateOfBirth);
 
-            if (serviceName.EndsWith("Young People") && (age < 16 || age > 21))
+            if (serviceName.EndsWith(YoungPeopleServiceName) && (age < YoungPeopleServiceMinAge || age > YoungPeopleServiceMaxAge))
             {
                 return false;
             }
-            else if (age < 18)
+            else if (age < OtherServiceAge)
             {
                 return false;
             }
@@ -90,7 +106,7 @@ namespace TestAppLibrary
             {
                 return age - 1;
             }
-            
+
             return age;
         }
     }
