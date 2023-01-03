@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace TestAppLibrary
 {
-    internal sealed class ReferralsService
+    public sealed class ReferralsService
     {
         private IEnumerable<Location> _locations;
         private IReferralsRepository _referralsRepository;
